@@ -8,35 +8,43 @@ import pickle
 
 import random
 
-def dist(x, y):
-    diff = tuple(map(operator.sub, x, y))
-    s_diff = tuple(map(operator.mul, diff, diff))
-    return sum(s_diff)
-
 
 def get_k_rand_values(data_cursor, k):
+    # returns k random values of the dataset
 
     data_cursor.first()
     it = data_cursor.iternext(keys=False, values=True)
 
     centers = []
 
-    for value in it:
-        centers.append(pickle.loads(value))
-        if len(centers) == k: break
-
     random.seed()
 
-    i = k
-    for value in it:
+    for i, value in enumerate(it):
         
-        r = random.randrange(0, i, 1)
-
-        if r < k:
-            centers[r] = pickle.loads(value)
+        if i < k:
+            centers.append(pickle.loads(value))
+        else:
+            r = random.randrange(0, i, 1)
+            if r < k:
+                centers[r] = pickle.loads(value)
             
     return(centers)
 
+
+def dist(x, y):
+    # returns the squared euclidian distance
+
+    diff = tuple(map(operator.sub, x, y))
+    s_diff = tuple(map(operator.mul, diff, diff))
+    return sum(s_diff)
+
+
+def which_partition(value, centers):
+    # returns the index of the closest center
+
+    distances = [dist(value, x) for x in centers]
+    return distances.index(min(distances))
+    
 
 def update_cluster(data_cursor, cluster_cursor, centers):
     
@@ -46,18 +54,9 @@ def update_cluster(data_cursor, cluster_cursor, centers):
     for key, bin_value in it_data:
         
         value = pickle.loads(bin_value)
-        
-        min_d = None
-        min_index = None
-        
-        for index, center in enumerate(centers):
-            d = dist(value, center)
+        partition = which_partition(value, centers)
 
-            if min_d is None or d < min_d :
-                min_d = d
-                min_index = index
-
-        cluster_cursor.put(key, pickle.dumps(min_index))
+        cluster_cursor.put(key, pickle.dumps(partition))
     
     data_cursor.first()
     cluster_cursor.first()
