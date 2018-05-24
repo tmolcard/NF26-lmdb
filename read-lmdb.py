@@ -8,7 +8,6 @@ import pickle
 
 import random
 
-
 def get_k_rand_values(data_cursor, k):
     # returns k random values of the dataset
 
@@ -44,51 +43,40 @@ def which_partition(value, centers):
 
     distances = [dist(value, x) for x in centers]
     return distances.index(min(distances))
-    
 
-def update_cluster(data_cursor, cluster_cursor, centers):
+
+def update_centers(data_cursor, old_centers):
     
+    k = len(old_centers)
+    if k == 0: return
+
+    p = len(old_centers[0])
+    if p == 0: return
+
     data_cursor.first()
-    it_data = data_cursor.iternext(keys=True, values=True)
 
-    for key, bin_value in it_data:
-        
+    centers = [(0,)*p for i in range(k)]
+    count   = [0,]*k
+
+    it = data_cursor.iternext(keys=False, values=True)
+
+    for bin_value in it:
         value = pickle.loads(bin_value)
-        partition = which_partition(value, centers)
 
-        cluster_cursor.put(key, pickle.dumps(partition))
-    
-    data_cursor.first()
-    cluster_cursor.first()
+        p = which_partition(value, old_centers) # get the appropriate partition
+        count[p] += 1                           # update the number of member
 
+        a = [(1-1/count[p]) * x for x in centers[p]]
+        b = [(1/count[p]) * x for x in value]
 
-def update_centers(data_cursor, cluster_cursor, k):
-    centers = []
-    for i in range(k):
-        value_sum   = (0, 0, 0, 0)
-        value_count = 0
-
-        cluster_cursor.first()
-        it_cluster = cluster_cursor.iternext(keys=True, values=True)
-
-        for key, cluster in it_cluster:
-            if pickle.loads(cluster) == i:
-                value = pickle.loads(data_cursor.get(key))
-                value_sum = tuple(map(operator.add, value_sum, value))
-                value_count += 1
-            
-        center_i = tuple(map(lambda x: x/value_count, value_sum))
-        centers.append(center_i)
-
-    data_cursor.first()
-    cluster_cursor.first()
+        # Precise the center position
+        centers[p] = tuple(map(operator.add, a, b))
 
     return centers
 
                 
-def k_means(data_cursor, cluster_cursor, k, eps = 0.00001, itermax = 20):
+def k_means(data_cursor, k, eps = 0.00001, itermax = 40):
     data_cursor.first()
-    cluster_cursor.first()
     
     # chose center
     centers      = get_k_rand_values(data_cursor, k)
@@ -98,14 +86,11 @@ def k_means(data_cursor, cluster_cursor, k, eps = 0.00001, itermax = 20):
 
     while centers_diff is None or centers_diff > eps:
         
-        # mise à jour des partitions
-        update_cluster(data_cursor, cluster_cursor, centers)
-
         # mise à jour des centres
-        centers_old = centers
-        centers     = update_centers(data_cursor, cluster_cursor, k)
+        old_centers = centers
+        centers     = update_centers(data_cursor, old_centers)
 
-        centers_diff = sum(map(dist, centers, centers_old))
+        centers_diff = sum(map(dist, centers, old_centers))
 
         iteration += 1
         print("iteration n°", iteration)
@@ -115,46 +100,17 @@ def k_means(data_cursor, cluster_cursor, k, eps = 0.00001, itermax = 20):
             break
 
     return centers
+    
 
 
 ## Algo
 
-size =  1000000000 # os.path.getsize(path)*10
-
-# données
 data_env = lmdb.open('data')
 
-data_txn = data_env.begin()
-data_cursor = data_txn.cursor()
+with data_env.begin() as data_txn:
+    data_cursor = data_txn.cursor()
 
-# partitions
+    centers = k_means(data_cursor, 4)
 
-cluster_env = lmdb.open('cluster', map_size = size)
-
-cluster_txn = cluster_env.begin(write=True)
-cluster_cursor = cluster_txn.cursor()
-
-
-# algo
-
-k_means(data_cursor, cluster_cursor, 4)
-
-print(cluster_cursor.first())
 
 data_env.close()
-cluster_env.close()
-
-
-
-# cluster_env = lmdb.open('data')
-
-# cluster_txn = cluster_env.begin()
-# cluster_cursor = cluster_txn.cursor()
-
-# cluster_cursor.first()
-# it = cluster_cursor.iternext()
-# for k, v in it:
-#     print("toto")
-
-
-rand
